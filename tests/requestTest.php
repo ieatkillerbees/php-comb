@@ -1,6 +1,6 @@
 <?php
 require("../request.php");
-
+use \Comb\Request;
 class RequestTest extends PHPUnit_Framework_Testcase
 {
 	public function setUp()
@@ -18,19 +18,21 @@ class RequestTest extends PHPUnit_Framework_Testcase
 	}
 	
 	/**
-	 * @expectedException Exception
+	 * @expectedException InvalidArgumentException
 	 * @expectedExceptionMessage FOO is not a recognized HTTP verb/method
 	 */
 	public function testMethodValidation()
 	{
 		$ro = new Comb\Request\Request("http://localhost");
-		$ro->setMethod("FOO");
+		$ro->request_method = "FOO";
 	}
 	
 	public function testSimpleGet()
 	{
 		$this->ro->setUrl("http://localhost");
 		$this->ro->setMethod("GET");
-		echo $this->ro->execute();
+		
+		$response = $this->ro->execute();
+		$this->assertInstanceOf("Comb\Request\Response", $response);
 	}
 }
