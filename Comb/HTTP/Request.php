@@ -1,6 +1,6 @@
 <?php
 /**
- * request.php
+ * Request.php
  * 
  * Request - A wrapper for PHP's cURL implementation
  * 
@@ -11,11 +11,7 @@
  * @version 0.1
  */
 
-namespace Comb\Request;
-use Response;
-
-// @TODO provide autoloader interface
-require("response.php");
+namespace Comb\HTTP;
 
 interface RequestInterface
 {
@@ -37,8 +33,9 @@ interface RequestInterface
  * @property integer $resp_timeout		Response timeout in whole seconds.
  * @property array	 $allowed_verbs		Array of allowed HTTP verbs.
  * @property string  $request_method	Request method, a valid HTTP verb.
- * 
- * @method 
+ * @property string  $service_url		URL of the target web service
+ * @method setUrl
+ * @method setMethod
  */
 class Request implements RequestInterface
 {
@@ -47,8 +44,6 @@ class Request implements RequestInterface
 	 * @var curl_resource 
 	 */
 	private $_curl_handler  = null;
-	private $_method	    = null;
-	private $_url		    = null;
 	private $_options = [
 		"allow_redirect" 	=> true,		// Follow reditect paths
 		"max_redirects"	 	=> 10,			// Avoid infinite redirection
@@ -57,8 +52,10 @@ class Request implements RequestInterface
 		"connect_timeout"	=> 120,			// seconds
 		"resp_timeout"	 	=> 120,			// seconds
 		"request_method"	=> "GET",		// request method
-		"allowed_verbs"		=> ["GET", "HEAD", "POST", "PUT", "DELETE", "TRACE", "OPTIONS", "CONNECT", "PATCH"] 
+		"allowed_verbs"		=> ["GET", "HEAD", "POST", "PUT", "DELETE", "TRACE", "OPTIONS", "CONNECT", "PATCH"],
+		"service_url"		=> null, 
 	];
+
 	/**
 	 * Mapping of options to CURLOPTS constants
 	 * @internal
@@ -72,31 +69,66 @@ class Request implements RequestInterface
 		"resp_timeout"		=> CURLOPT_TIMEOUT,
 	];
 
+	/**
+	 * Magic method to retrieve psudeoproperties.
+	 * @param string $property
+	 * @throws \RuntimeException
+	 * @return multitype:boolean number string NULL multitype:string
+	 */
 	public function __get($property)
 	{
 		if (array_key_exists($property, $this->_options)) {
 			return $this->_options[$property];
-		} elseif (property_exists($this, "_" . $property)) {
-			return $this->_{$property};
 		} else {
-			throw new \RuntimeException("{$property} is not a property of this object.");
+			throw new \RuntimeException("{$property} is not a property of this object");
 		}
 	}
 	
+	/**
+	 * Transform a property name to a method name.
+	 * @param string $property
+	 * @return string
+	 */
+	private function _propertyToMethod($property)
+	{
+		$property = ucwords(str_replace("_", " ", $property));
+		return str_replace(" ", "", $property);
+	}
+	
+	/**
+	 * Magic methos to set pseudoproperties
+	 * @param string $property
+	 * @param string $value
+	 * @throws \RuntimeException
+	 * @return void
+	 */
 	public function __set($property, $value)
 	{
-		switch ($property) {
-			case "request_method":
-				$this->setMethod($value);
+		
+		if (method_exists($this, "_set" . $this->_propertyToMethod($property))) {
+			return call_user_func(array($this, "_set" . $this->_propertyToMethod($property)), $value);
+		}
+
+		if (array_key_exists($property, $this->_options)) {
+			$this->_options[$property] = $value;
+		} else {
+			throw new \RuntimeException("{$property} is not a property of this object");
 		}
 	}
 	
+	/**
+	 * Magic caller method
+	 * @param string $method
+	 * @param array  $args
+	 * @throws \RuntimeException
+	 * @return multitype:boolean number string NULL multitype:string
+	 */
 	public function __call($method, array $args)
 	{
 		if (method_exists($this, "_" . $method)) {
 			return call_user_func_array([$this, "_" . $method], $args);
 		} else {
-			throw new \RuntimeException("{$method} is not a method of this object.");
+			throw new \RuntimeException("{$method} is not a method of this object");
 		}
 	}
 	
@@ -105,9 +137,8 @@ class Request implements RequestInterface
 	 * @param $url string Target URL
 	 * @param $options array An array of options
 	 */
-	public function __construct($url, array $options = [])
+	public function __construct(array $options = [])
 	{
-		$this->setUrl($url);
 		$this->_options = array_merge($this->_options, $options);
 	}
 
@@ -116,50 +147,40 @@ class Request implements RequestInterface
 	 */
 	
 	/**
-	 * Set the HTTP method
+	 * Set the HTTP method if allowed
 	 * @param $method An HTTP verb
  	 * @throws Exception
  	 * @return null
 	 */
-	private function _setMethod($method) 
+	private function _setRequestMethod($method) 
 	{
 		if (!(in_array($method, $this->allowed_verbs))) {
 			throw new \InvalidArgumentException("${method} is not a recognized HTTP verb/method");
 		}
-		$this->_method = $method;
+		$this->request_method = $method;
 	}
 	
 	/**
-	 * Returns the set HTTP method/verb
-	 * @return string
+	 * Sets the service URL if valid
+	 * @param string $url
+	 * @throws \InvalidArgumentException
+	 * @return void
 	 */
-	public function getMethod($method)
-	{
-		return $this->_method;
-	}
-	
-	/**
-	 * Sets the target URL
-	 * @param $url A well-formed URL.
-	 * @return null 
-	 */
-	public function setUrl($url)
+	private function _setServiceUrl($url)
 	{
 		if (filter_var($url, FILTER_VALIDATE_URL) === FALSE) {
-			throw new \Exception("${url} is not a syntactically valid URL");
+			throw new \InvalidArgumentException("${url} is not a syntactically valid URL");
 		}
-		$this->_url = $url;
+		$this->service_url = $url;
 	}
 	
 	/**
-	 * Returns the target URL
-	 * @return string
+	 * For any entry in the options that corresponds to a CURL opt, 
+	 * extract the appropriate CURLOPT constant and execute 
+	 * curl_setopt
+	 * @return void
+	 * @codeCoverageIgnore
 	 */
-	public function getUrl()
-	{
-		return $this->_url;
-	}
-	
 	private function _setCurlOptions()
 	{
 		foreach ($this->_options as $option => $value) {
@@ -183,14 +204,14 @@ class Request implements RequestInterface
 		curl_setopt($this->_curl_handler, CURLOPT_RETURNTRANSFER, true);
 		
 		// Set the target URL
-		curl_setopt($this->_curl_handler, CURLOPT_URL, $this->_url);
+		curl_setopt($this->_curl_handler, CURLOPT_URL, $this->service_url);
 		
 		// Set verbosity on and capture headers
-		curl_setopt($this->_curl_handler, CURLOPT_VERBOSE, true);
+		curl_setopt($this->_curl_handler, CURLOPT_VERBOSE, false);
 		curl_setopt($this->_curl_handler, CURLOPT_HEADER, true);
 		
 		// Capture the response
-		$response = new \Comb\Request\Response($this->_curl_handler, $this->_options);
+		$response = new Response($this->_curl_handler, $this->_options);
 		
 		// Close the handler.
 		curl_close($this->_curl_handler);

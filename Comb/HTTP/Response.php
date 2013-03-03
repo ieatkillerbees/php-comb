@@ -1,6 +1,6 @@
 <?php
 /**
- * response.php
+ * Response.php
  *
  * Comn - A wrapper for PHP's cURL implementation
  *
@@ -11,7 +11,7 @@
  * @version 0.1
  */
 
-namespace Comb\Request;
+namespace Comb\HTTP;
 
 class Response
 {
@@ -43,6 +43,9 @@ class Response
 		$this->response_headers = $this->_parseHeaders();
 	}
 	
+	/**
+	 * @codeCoverageIgnore
+	 */
 	public function setException()
 	{
 		if (!in_array($this->response_code, $this->_options["success_codes"]))
